@@ -53,7 +53,9 @@ func (cs *controllerServer) CreateVolume(ctx context.Context, req *csi.CreateVol
 	volType := req.GetParameters()["type"]
 
 	// Volume Availability - Default is nova
-	volAvailability := req.GetParameters()["availability"]
+	// volAvailability := req.GetParameters()["availability"]
+
+	volAvailability := GetAvailabilityZone(req.GetAccessibilityRequirements())
 
 	// Get OpenStack Provider
 	cloud, err := openstack.GetOpenStackProvider()
@@ -97,11 +99,33 @@ func (cs *controllerServer) CreateVolume(ctx context.Context, req *csi.CreateVol
 		Volume: &csi.Volume{
 			Id:            resID,
 			CapacityBytes: int64(resSize * 1024 * 1024 * 1024),
-			Attributes: map[string]string{
-				"availability": resAvailability,
+			AccessibleTopology: []*csi.Topology{
+				&csi.Topology{Segments: map[string]string{topologyKey: resAvailability},
+				},
 			},
 		},
 	}, nil
+}
+
+func GetAvailabilityZone(requirement *csi.TopologyRequirement) string {
+	if requirement == nil {
+		return ""
+	}
+
+	for _, topology := range requirement.GetPreferred() {
+		zone, exists := topology.GetSegments()[topologyKey]
+		if exists {
+			return zone
+		}
+	}
+
+	for _, topology := range requirement.GetRequisite()  {
+		zone, exists := topology.GetSegments()[topologyKey]
+		if exists {
+			return zone
+		}
+	}
+	return ""
 }
 
 func (cs *controllerServer) DeleteVolume(ctx context.Context, req *csi.DeleteVolumeRequest) (*csi.DeleteVolumeResponse, error) {

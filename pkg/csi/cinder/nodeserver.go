@@ -139,9 +139,13 @@ func (ns *nodeServer) NodeGetInfo(ctx context.Context, req *csi.NodeGetInfoReque
 		return nil, err
 	}
 
+	zone, err := openstack.GetAvailabilityZone()
+	topology := &csi.Topology{Segments: map[string]string{topologyKey: zone}}
+
 	if len(nodeID) > 0 {
 		return &csi.NodeGetInfoResponse{
-			NodeId: nodeID,
+			NodeId:             nodeID,
+			AccessibleTopology: topology,
 		}, nil
 	}
 

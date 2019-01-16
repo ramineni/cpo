@@ -13,7 +13,8 @@ const (
 )
 
 type metadata struct {
-	UUID string
+	UUID             string
+	availabilityZone string
 }
 
 func getMetadata(metadataURL string) ([]byte, error) {
@@ -33,18 +34,36 @@ func getMetadata(metadataURL string) ([]byte, error) {
 	return md, nil
 }
 
-// GetInstanceID from metadata service
-func GetInstanceID() (string, error) {
+// GetMetaDataInfo retrieves from metadata service and returns
+// info in metadata struct
+func getMetaDataInfo() (metadata, error) {
 	metadataURL := fmt.Sprintf(metadataURLTemplate, defaultMetadataVersion)
+	var m metadata
 	md, err := getMetadata(metadataURL)
 	if err != nil {
-		return "", err
+		return m, err
 	}
-	var m metadata
 	err = json.Unmarshal(md, &m)
+	if err != nil {
+		return m, err
+	}
+	return m, nil
+}
+
+// GetInstanceID from metadata service
+func GetInstanceID() (string, error) {
+	md, err := getMetaDataInfo()
 	if err != nil {
 		return "", err
 	}
+	return md.UUID, nil
+}
 
-	return m.UUID, nil
+// GetAvailabilityZone from metadata service
+func GetAvailabilityZone() (string, error) {
+	md, err := getMetaDataInfo()
+	if err != nil {
+		return "", err
+	}
+	return md.availabilityZone, nil
 }

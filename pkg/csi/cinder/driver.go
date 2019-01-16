@@ -39,6 +39,7 @@ type driver struct {
 
 const (
 	driverName = "cinder.csi.openstack.org"
+	topologyKey = driverName + "/zone"
 )
 
 var (
