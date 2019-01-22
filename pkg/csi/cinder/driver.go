@@ -26,14 +26,6 @@ import (
 	"k8s.io/klog"
 )
 
-const (
-	driverName = "cinder.csi.openstack.org"
-)
-
-var (
-	version = "0.3.0"
-)
-
 type CinderDriver struct {
 	name        string
 	nodeID      string
@@ -49,6 +41,15 @@ type CinderDriver struct {
 	cscap []*csi.ControllerServiceCapability
 	nscap []*csi.NodeServiceCapability
 }
+
+const (
+	driverName = "cinder.csi.openstack.org"
+	topologyKey = "topology."+ driverName + "/zone"
+)
+
+var (
+	version = "0.3.0"
+)
 
 func NewDriver(nodeID, endpoint string, cloudconfig string) *CinderDriver {
 	klog.Infof("Driver: %v version: %v", driverName, version)

@@ -37,6 +37,7 @@ type controllerServer struct {
 
 func (cs *controllerServer) CreateVolume(ctx context.Context, req *csi.CreateVolumeRequest) (*csi.CreateVolumeResponse, error) {
 
+	klog.V(1).Infof("anu: Create Volume controller initiated: %v", req)
 	// Volume Name
 	volName := req.GetName()
 	if len(volName) == 0 {
@@ -52,9 +53,16 @@ func (cs *controllerServer) CreateVolume(ctx context.Context, req *csi.CreateVol
 
 	// Volume Type
 	volType := req.GetParameters()["type"]
+	var volAvailability string
+	klog.V(1).Infof("anu: Create Volume controller requirements %v", req.GetAccessibilityRequirements())
+	if req.GetAccessibilityRequirements() != nil {
+	    volAvailability = GetAZFromTopology(req.GetAccessibilityRequirements())
+	}
 
-	// Volume Availability - Default is nova
-	volAvailability := req.GetParameters()["availability"]
+	if len(volAvailability) == 0 {
+	    // Volume Availability - Default is nova
+	    volAvailability = req.GetParameters()["availability"]
+	}
 
 	// Get OpenStack Provider
 	cloud, err := openstack.GetOpenStackProvider()
@@ -98,11 +106,31 @@ func (cs *controllerServer) CreateVolume(ctx context.Context, req *csi.CreateVol
 		Volume: &csi.Volume{
 			Id:            resID,
 			CapacityBytes: int64(resSize * 1024 * 1024 * 1024),
-			Attributes: map[string]string{
-				"availability": resAvailability,
+			AccessibleTopology: []*csi.Topology{
+			    {
+				Segments: map[string]string{topologyKey: resAvailability},
+			    },
 			},
 		},
 	}, nil
+}
+
+func GetAZFromTopology(requirement *csi.TopologyRequirement) string {
+	klog.V(1).Infof("anu: getAZFromTopology entered")
+	for _, topology := range requirement.GetPreferred() {
+		zone, exists := topology.GetSegments()[topologyKey]
+		if exists {
+			return zone
+		}
+	}
+
+	for _, topology := range requirement.GetRequisite()  {
+		zone, exists := topology.GetSegments()[topologyKey]
+		if exists {
+			return zone
+		}
+	}
+	return ""
 }
 
 func (cs *controllerServer) DeleteVolume(ctx context.Context, req *csi.DeleteVolumeRequest) (*csi.DeleteVolumeResponse, error) {

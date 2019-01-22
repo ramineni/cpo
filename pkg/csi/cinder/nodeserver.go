@@ -128,14 +128,23 @@ func (ns *nodeServer) NodeGetId(ctx context.Context, req *csi.NodeGetIdRequest) 
 
 func (ns *nodeServer) NodeGetInfo(ctx context.Context, req *csi.NodeGetInfoRequest) (*csi.NodeGetInfoResponse, error) {
 
+	klog.V(5).Infof("anu:NodeGetInfo called")
+	klog.Infof("anu: jkNodeGetInfo called")
 	nodeID, err := getNodeID()
 	if err != nil {
 		return nil, err
 	}
 
+	zone, err := openstack.GetAvailabilityZone()
+	klog.V(4).Infof("anu: zone is %s", zone)
+	topology := &csi.Topology{Segments: map[string]string{topologyKey: zone}}
+
+	klog.V(5).Infof("anu: topology is %v", topology)
 	return &csi.NodeGetInfoResponse{
-		NodeId: nodeID,
+		NodeId:             nodeID,
+		AccessibleTopology: topology,
 	}, nil
+
 }
 
 func (ns *nodeServer) NodeGetCapabilities(ctx context.Context, req *csi.NodeGetCapabilitiesRequest) (*csi.NodeGetCapabilitiesResponse, error) {
