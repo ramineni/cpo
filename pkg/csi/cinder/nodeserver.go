@@ -32,23 +32,25 @@ type nodeServer struct {
 }
 
 func (ns *nodeServer) NodePublishVolume(ctx context.Context, req *csi.NodePublishVolumeRequest) (*csi.NodePublishVolumeResponse, error) {
+	klog.V(4).Infof("NodePublishVolume: called with args %+v", *req)
 
+	source := req.GetStagingTargetPath()
 	targetPath := req.GetTargetPath()
+	readOnly := req.GetReadonly()
 	fsType := req.GetVolumeCapability().GetMount().GetFsType()
-	devicePath := req.GetPublishInfo()["DevicePath"]
 
 	// Get Mount Provider
 	m, err := mount.GetMountProvider()
 	if err != nil {
 		klog.V(3).Infof("Failed to GetMountProvider: %v", err)
-		return nil, err
+		return nil, status.Error(codes.Internal, err.Error())
 	}
 
-	// Device Scan
-	err = m.ScanForAttach(devicePath)
-	if err != nil {
-		klog.V(3).Infof("Failed to ScanForAttach: %v", err)
-		return nil, err
+	mountOptions := []string{"bind"}
+	if req.GetReadonly() {
+		mountOptions = append(mountOptions, "ro")
+	} else {
+		mountOptions = append(mountOptions, "rw")
 	}
 
 	// Verify whether mounted
@@ -59,18 +61,15 @@ func (ns *nodeServer) NodePublishVolume(ctx context.Context, req *csi.NodePublis
 
 	// Volume Mount
 	if notMnt {
-		// Get Options
-		var options []string
-		if req.GetReadonly() {
+		// Perform a bind mount
+		options := []string{"bind"}
+		if readOnly {
 			options = append(options, "ro")
 		} else {
 			options = append(options, "rw")
 		}
-		mountFlags := req.GetVolumeCapability().GetMount().GetMountFlags()
-		options = append(options, mountFlags...)
-
 		// Mount
-		err = m.FormatAndMount(devicePath, targetPath, fsType, options)
+		err = m.Mount(source, targetPath, fsType, options)
 		if err != nil {
 			return nil, status.Error(codes.Internal, err.Error())
 		}
@@ -98,7 +97,7 @@ func (ns *nodeServer) NodeUnpublishVolume(ctx context.Context, req *csi.NodeUnpu
 		return nil, status.Error(codes.NotFound, "Volume not mounted")
 	}
 
-	err = m.UnmountPath(req.GetTargetPath())
+	err = m.UnmountPath(targetPath)
 	if err != nil {
 		return nil, status.Error(codes.Internal, err.Error())
 	}
@@ -107,10 +106,82 @@ func (ns *nodeServer) NodeUnpublishVolume(ctx context.Context, req *csi.NodeUnpu
 }
 
 func (ns *nodeServer) NodeUnstageVolume(ctx context.Context, req *csi.NodeUnstageVolumeRequest) (*csi.NodeUnstageVolumeResponse, error) {
+	stagingTargetPath := req.GetStagingTargetPath()
+
+	// Get Mount Provider
+	m, err := mount.GetMountProvider()
+	if err != nil {
+		klog.V(3).Infof("Failed to GetMountProvider: %v", err)
+		return nil, err
+	}
+
+	notMnt, err := m.IsLikelyNotMountPointDetach(stagingTargetPath)
+	if err != nil {
+		return nil, status.Error(codes.Internal, err.Error())
+	}
+	if notMnt {
+		return nil, status.Error(codes.NotFound, "Volume not mounted")
+	}
+
+	err = m.UnmountPath(stagingTargetPath)
+	if err != nil {
+		return nil, status.Error(codes.Internal, err.Error())
+	}
+
 	return &csi.NodeUnstageVolumeResponse{}, nil
 }
 
 func (ns *nodeServer) NodeStageVolume(ctx context.Context, req *csi.NodeStageVolumeRequest) (*csi.NodeStageVolumeResponse, error) {
+	klog.V(4).Infof("NodeStageVolume: called with args %+v", *req)
+
+	stagingTarget := req.GetStagingTargetPath()
+	volumeCapability := req.GetVolumeCapability()
+	if len(stagingTarget) == 0 {
+		return nil, status.Error(codes.InvalidArgument, "Staging target not provided")
+	}
+	devicePath, ok := req.GetPublishInfo()["DevicePath"]
+	if !ok {
+		return nil, status.Error(codes.InvalidArgument, "Device path not provided")
+	}
+	// Get Mount Provider
+	m, err := mount.GetMountProvider()
+	if err != nil {
+		klog.V(3).Infof("Failed to GetMountProvider: %v", err)
+		return nil, status.Errorf(codes.Internal, "Failed to GetMountProvider: %v", err)
+	}
+	// Device Scan
+	err = m.ScanForAttach(devicePath)
+	if err != nil {
+		klog.V(3).Infof("Failed to ScanForAttach: %v", err)
+		return nil, status.Errorf(codes.Internal, "Failed to ScanForAttach: %v", err)
+	}
+
+	// Verify whether mounted
+	notMnt, err := m.IsLikelyNotMountPointAttach(stagingTarget)
+	if err != nil {
+		return nil, status.Error(codes.Internal, err.Error())
+	}
+
+	// Volume Mount
+	if notMnt {
+		// Default fstype is ext4
+		fsType := "ext4"
+		var options []string
+		if mnt := volumeCapability.GetMount(); mnt != nil {
+			fsType = volumeCapability.GetMount().GetFsType()
+			mountFlags := volumeCapability.GetMount().GetMountFlags()
+			options = append(options, mountFlags...)
+		} else if blk := volumeCapability.GetBlock(); blk != nil {
+			// TODO(#341): Block volume support
+			return nil, status.Errorf(codes.Unimplemented, "Block volume support is not yet implemented")
+		}
+		// Mount
+		err = m.FormatAndMount(devicePath, stagingTarget, fsType, options)
+		if err != nil {
+			return nil, status.Error(codes.Internal, err.Error())
+		}
+	}
+
 	return &csi.NodeStageVolumeResponse{}, nil
 }
 
