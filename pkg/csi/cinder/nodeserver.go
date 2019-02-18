@@ -18,6 +18,8 @@ package cinder
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 
 	"github.com/container-storage-interface/spec/lib/go/csi"
 	"golang.org/x/net/context"
@@ -51,6 +53,18 @@ func (ns *nodeServer) NodePublishVolume(ctx context.Context, req *csi.NodePublis
 		return nil, status.Error(codes.Internal, err.Error())
 	}
 
+	mountOptions := []string{"bind"}
+	if req.GetReadonly() {
+		mountOptions = append(mountOptions, "ro")
+	} else {
+		mountOptions = append(mountOptions, "rw")
+	}
+
+	if blk := volumeCapability.GetBlock(); blk != nil {
+		return nodePublishVolumeForBlock(req, mountOptions)
+	}
+	klog.V(4).Infof("NodePublishVolume: fileysstem mount")
+
 	// Verify whether mounted
 	notMnt, err := m.IsLikelyNotMountPointAttach(targetPath)
 	if err != nil {
@@ -59,24 +73,58 @@ func (ns *nodeServer) NodePublishVolume(ctx context.Context, req *csi.NodePublis
 
 	// Volume Mount
 	if notMnt {
-		// Perform a bind mount
-		options := []string{"bind"}
 		fsType := "ext4"
-		if req.GetReadonly() {
-			options = append(options, "ro")
-		} else {
-			options = append(options, "rw")
-		}
 		if mnt := volumeCapability.GetMount(); mnt != nil {
 			if mnt.FsType != "" {
 				fsType = mnt.FsType
 			}
 		}
 		// Mount
-		err = m.Mount(source, targetPath, fsType, options)
+		err = m.GetBaseMounter().Mount(source, targetPath, fsType, mountOptions)
 		if err != nil {
 			return nil, status.Error(codes.Internal, err.Error())
 		}
+	}
+
+	return &csi.NodePublishVolumeResponse{}, nil
+}
+
+func nodePublishVolumeForBlock(req *csi.NodePublishVolumeRequest, mountOptions []string) (*csi.NodePublishVolumeResponse, error) {
+	klog.V(4).Infof("NodePublishVolume: called with args %+v", *req)
+
+	source := req.GetPublishContext()["DevicePath"]
+	targetPath := req.GetTargetPath()
+	podVolumePath := filepath.Dir(targetPath)
+	//volumeCapability := req.GetVolumeCapability()
+
+	klog.V(4).Infof("anu:NodePublishVolume: source target %v %v", source, targetPath)
+	// Get Mount Provider
+	m, err := mount.GetMountProvider()
+	if err != nil {
+		klog.V(3).Infof("Failed to GetMountProvider: %v", err)
+		return nil, status.Error(codes.Internal, err.Error())
+	}
+
+	// Verify whether mounted
+	exists, err := m.GetBaseMounter().ExistsPath(podVolumePath)
+	if err != nil {
+		return nil, status.Error(codes.Internal, err.Error())
+	}
+	if !exists {
+		if err := m.GetBaseMounter().MakeDir(podVolumePath); err != nil {
+			return nil, status.Errorf(codes.Internal, "Could not create dir %q: %v", podVolumePath, err)
+		}
+	}
+	err = m.GetBaseMounter().MakeFile(targetPath)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "Error in making file %v", err)
+	}
+
+	if err := m.GetBaseMounter().Mount(source, targetPath, "", mountOptions); err != nil {
+		if removeErr := os.Remove(targetPath); removeErr != nil {
+			return nil, status.Errorf(codes.Internal, "Could not remove mount target %q: %v", targetPath, err)
+		}
+		return nil, status.Errorf(codes.Internal, "Could not mount %q at %q: %v", source, targetPath, err)
 	}
 
 	return &csi.NodePublishVolumeResponse{}, nil
@@ -124,10 +172,14 @@ func (ns *nodeServer) NodeStageVolume(ctx context.Context, req *csi.NodeStageVol
 	if volumeCapability == nil {
 		return nil, status.Error(codes.InvalidArgument, "NodeStageVolume Volume Capability must be provided")
 	}
-
 	devicePath, ok := req.GetPublishContext()["DevicePath"]
 	if !ok {
 		return nil, status.Error(codes.InvalidArgument, "Device path not provided")
+	}
+
+	if blk := volumeCapability.GetBlock(); blk != nil {
+		// If block volume, do nothing
+		return &csi.NodeStageVolumeResponse{}, nil
 	}
 	// Get Mount Provider
 	m, err := mount.GetMountProvider()
@@ -159,12 +211,9 @@ func (ns *nodeServer) NodeStageVolume(ctx context.Context, req *csi.NodeStageVol
 			}
 			mountFlags := mnt.GetMountFlags()
 			options = append(options, mountFlags...)
-		} else if blk := volumeCapability.GetBlock(); blk != nil {
-			// TODO(#341): Block volume support
-			return nil, status.Errorf(codes.Unimplemented, "Block volume support is not yet implemented")
 		}
 		// Mount
-		err = m.FormatAndMount(devicePath, stagingTarget, fsType, options)
+		err = m.GetBaseMounter().FormatAndMount(devicePath, stagingTarget, fsType, options)
 		if err != nil {
 			return nil, status.Error(codes.Internal, err.Error())
 		}
