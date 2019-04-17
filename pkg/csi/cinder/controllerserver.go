@@ -161,6 +161,7 @@ func (cs *controllerServer) ControllerPublishVolume(ctx context.Context, req *cs
 
 	// Get OpenStack Provider
 	cloud, err := openstack.GetOpenStackProvider()
+
 	if err != nil {
 		klog.V(3).Infof("Failed to GetOpenStackProvider: %v", err)
 		return nil, err
@@ -182,13 +183,15 @@ func (cs *controllerServer) ControllerPublishVolume(ctx context.Context, req *cs
 		return nil, err
 	}
 
-	devicePath, err := cloud.GetAttachmentDiskPath(instanceID, volumeID)
+	//devicePath, err := cloud.GetAttachmentDiskPath(instanceID, volumeID)
+	devicePath, err := cloud.GetDevicePath(volumeID)
+
 	if err != nil {
 		klog.V(3).Infof("Failed to GetAttachmentDiskPath: %v", err)
 		return nil, err
 	}
 
-	klog.V(4).Infof("ControllerPublishVolume %s on %s", volumeID, instanceID)
+	klog.V(3).Infof("anu: ControllerPublishVolume %s on %s %s", volumeID, instanceID, devicePath)
 
 	// Publish Volume Info
 	pvInfo := map[string]string{}
