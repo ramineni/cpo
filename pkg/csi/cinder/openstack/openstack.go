@@ -46,6 +46,8 @@ type IOpenStack interface {
 	GetSnapshotByNameAndVolumeID(n string, volumeId string) ([]snapshots.Snapshot, error)
 	GetSnapshotByID(snapshotID string) (*snapshots.Snapshot, error)
 	WaitSnapshotReady(snapshotID string) error
+	GetDevicePath(volumeID string) (string, error)
+	GetDevicePathBySerialID(volumeID string) string
 }
 
 type OpenStack struct {
