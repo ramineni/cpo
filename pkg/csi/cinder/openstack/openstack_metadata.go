@@ -18,7 +18,7 @@ type IMetadata interface {
 	GetAvailabilityZone() (string, error)
 }
 
-type metadata struct {
+type metadata1 struct {
 	UUID             string
 	AvailabilityZone string "json:\"availability_zone\""
 }
@@ -30,7 +30,7 @@ var MetadataService IMetadata
 func GetMetadataProvider() (IMetadata, error) {
 
 	if MetadataService == nil {
-		MetadataService = &metadata{}
+		MetadataService = &metadata1{}
 	}
 	return MetadataService, nil
 }
@@ -54,9 +54,9 @@ func getMetadata(metadataURL string) ([]byte, error) {
 
 // getMetaDataInfo retrieves from metadata service and returns
 // info in metadata struct
-func getMetaDataInfo() (metadata, error) {
+func getMetaDataInfo() (metadata1, error) {
 	metadataURL := fmt.Sprintf(metadataURLTemplate, defaultMetadataVersion)
-	var m metadata
+	var m metadata1
 	md, err := getMetadata(metadataURL)
 	if err != nil {
 		return m, err
@@ -69,7 +69,7 @@ func getMetaDataInfo() (metadata, error) {
 }
 
 // GetInstanceID from metadata service
-func (m *metadata) GetInstanceID() (string, error) {
+func (m *metadata1) GetInstanceID() (string, error) {
 	md, err := getMetaDataInfo()
 	if err != nil {
 		return "", err
@@ -78,7 +78,7 @@ func (m *metadata) GetInstanceID() (string, error) {
 }
 
 // GetAvailabilityZone returns zone from metadata service
-func (m *metadata) GetAvailabilityZone() (string, error) {
+func (m *metadata1) GetAvailabilityZone() (string, error) {
 	md, err := getMetaDataInfo()
 	if err != nil {
 		return "", err

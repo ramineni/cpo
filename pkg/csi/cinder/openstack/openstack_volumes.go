@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"path"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -27,6 +28,7 @@ import (
 	"github.com/gophercloud/gophercloud/openstack/compute/v2/extensions/volumeattach"
 	"k8s.io/apimachinery/pkg/util/wait"
 	cpoerrors "k8s.io/cloud-provider-openstack/pkg/util/errors"
+	"k8s.io/cloud-provider-openstack/pkg/util/metadata"
 
 	"k8s.io/klog"
 )
@@ -313,10 +315,10 @@ func (os *OpenStack) GetDevicePath(volumeID string) (string, error) {
 		if devicePath != "" {
 			return true, nil
 		}
-		//devicePath = os.getDevicePathFromInstanceMetadata(volumeID)
-		//if devicePath != "" {
-		//	return true, nil
-		//}
+		devicePath = os.getDevicePathFromInstanceMetadata(volumeID)
+		if devicePath != "" {
+			return true, nil
+		}
 		return false, nil
 	})
 
@@ -332,6 +334,7 @@ func (os *OpenStack) GetDevicePath(volumeID string) (string, error) {
 func (os *OpenStack) GetDevicePathBySerialID(volumeID string) string {
 	// Build a list of candidate device paths.
 	// Certain Nova drivers will set the disk serial ID, including the Cinder volume id.
+	klog.V(4).Infof("GetDevicePathbySerial %s", volumeID)
 	candidateDeviceNodes := []string{
 		// KVM
 		fmt.Sprintf("virtio-%s", volumeID[:20]),
@@ -341,9 +344,12 @@ func (os *OpenStack) GetDevicePathBySerialID(volumeID string) string {
 		fmt.Sprintf("wwn-0x%s", strings.Replace(volumeID, "-", "", -1)),
 	}
 
-	files, _ := ioutil.ReadDir("/dev/disk/by-id/")
+	klog.V(4).Infof("candidateDeviceNodes %v", candidateDeviceNodes)
+	files, err := ioutil.ReadDir("/dev/disk/by-id/")
+	klog.V(4).Infof("files %v -  %v", files, err)
 
 	for _, f := range files {
+		klog.V(4).Infof("filenames %s", f.Name())
 		for _, c := range candidateDeviceNodes {
 			if c == f.Name() {
 				klog.V(4).Infof("Found disk attached as %q; full devicepath: %s\n", f.Name(), path.Join("/dev/disk/by-id/", f.Name()))
@@ -356,14 +362,16 @@ func (os *OpenStack) GetDevicePathBySerialID(volumeID string) string {
 	return ""
 }
 
-/* func (os *OpenStack) getDevicePathFromInstanceMetadata(volumeID string) string {
+func (os *OpenStack) getDevicePathFromInstanceMetadata(volumeID string) string {
 	// Nova Hyper-V hosts cannot override disk SCSI IDs. In order to locate
 	// volumes, we're querying the metadata service. Note that the Hyper-V
 	// driver will include device metadata for untagged volumes as well.
 	//
 	// We're avoiding using cached metadata (or the configdrive),
 	// relying on the metadata service.
+	klog.V(4).Infof("GetDevicePathbyMetadatadata %s", volumeID)
 	instanceMetadata, err := metadata.GetFromMetadataService("latest")
+	klog.V(4).Infof("anu:devices %v", instanceMetadata.Devices)
 
 	if err != nil {
 		klog.V(4).Infof(
@@ -403,7 +411,7 @@ func (os *OpenStack) GetDevicePathBySerialID(volumeID string) string {
 		"Could not retrieve device metadata for volumeID: %q", volumeID)
 	return ""
 }
-*/
+
 // diskIsAttached queries if a volume is attached to a compute instance
 func (os *OpenStack) diskIsAttached(instanceID, volumeID string) (bool, error) {
 	volume, err := os.GetVolume(volumeID)
