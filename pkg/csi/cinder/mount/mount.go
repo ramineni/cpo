@@ -36,6 +36,7 @@ const (
 )
 
 type IMount interface {
+	GetBaseMounter() *mount.SafeFormatAndMount
 	ScanForAttach(devicePath string) error
 	IsLikelyNotMountPointAttach(targetpath string) (bool, error)
 	FormatAndMount(source string, target string, fstype string, options []string) error
@@ -56,6 +57,17 @@ func GetMountProvider() (IMount, error) {
 		MInstance = &Mount{}
 	}
 	return MInstance, nil
+}
+
+// GetBaseMounter returns instance of SafeFormatAndMount
+func (m *Mount) GetBaseMounter() *mount.SafeFormatAndMount {
+	nMounter := mount.New("")
+	nExec := mount.NewOsExec()
+	return &mount.SafeFormatAndMount{
+		Interface: nMounter,
+		Exec:      nExec,
+	}
+
 }
 
 // probeVolume probes volume in compute
