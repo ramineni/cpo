@@ -39,6 +39,7 @@ type IOpenStack interface {
 	DetachVolume(instanceID, volumeID string) error
 	WaitDiskDetached(instanceID string, volumeID string) error
 	GetAttachmentDiskPath(instanceID, volumeID string) (string, error)
+	GetDevicePath(volumeID string) (string, error)
 	GetVolumesByName(name string) ([]Volume, error)
 	CreateSnapshot(name, volID, description string, tags *map[string]string) (*snapshots.Snapshot, error)
 	ListSnapshots(limit, offset int, filters map[string]string) ([]snapshots.Snapshot, error)

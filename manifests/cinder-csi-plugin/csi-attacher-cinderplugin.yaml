@@ -47,6 +47,11 @@ spec:
             - name: socket-dir
               mountPath: /var/lib/csi/sockets/pluginproxy/
         - name: cinder
+          securityContext:
+            privileged: true
+            capabilities:
+              add: ["SYS_ADMIN"]
+            allowPrivilegeEscalation: true
           image: docker.io/k8scloudprovider/cinder-csi-plugin:latest
           args :
             - /bin/cinder-csi-plugin
@@ -66,12 +71,19 @@ spec:
           volumeMounts:
             - name: socket-dir
               mountPath: /csi
+            - name: pods-probe-dir
+              mountPath: /dev
+              mountPropagation: "HostToContainer"
             - name: secret-cinderplugin
               mountPath: /etc/config
               readOnly: true
       volumes:
         - name: socket-dir
           emptyDir:
+        - name: pods-probe-dir
+          hostPath:
+            path: /dev
+            type: Directory
         - name: secret-cinderplugin
           secret:
             secretName: cloud-config

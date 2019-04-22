@@ -194,7 +194,7 @@ func TestControllerPublishVolume(t *testing.T) {
 	// WaitDiskAttached(instanceID string, volumeID string) error
 	osmock.On("WaitDiskAttached", fakeNodeID, fakeVolID).Return(nil)
 	// GetAttachmentDiskPath(instanceID, volumeID string) (string, error)
-	osmock.On("GetAttachmentDiskPath", fakeNodeID, fakeVolID).Return(fakeDevicePath, nil)
+	osmock.On("GetDevicePath", fakeVolID).Return(fakeDevicePath, nil)
 	openstack.OsInstance = osmock
 
 	// Init assert

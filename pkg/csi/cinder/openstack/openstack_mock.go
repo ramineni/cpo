@@ -157,6 +157,27 @@ func (_m *OpenStackMock) GetAttachmentDiskPath(instanceID string, volumeID strin
 	return r0, r1
 }
 
+// GetDevicePath provides a mock function with given fields: volumeID
+func (_m *OpenStackMock) GetDevicePath(volumeID string) (string, error) {
+	ret := _m.Called(volumeID)
+
+	var r0 string
+	if rf, ok := ret.Get(0).(func(string) string); ok {
+		r0 = rf(volumeID)
+	} else {
+		r0 = ret.Get(0).(string)
+	}
+
+	var r1 error
+	if rf, ok := ret.Get(1).(func(string) error); ok {
+		r1 = rf(volumeID)
+	} else {
+		r1 = ret.Error(1)
+	}
+
+	return r0, r1
+}
+
 // WaitDiskAttached provides a mock function with given fields: instanceID, volumeID
 func (_m *OpenStackMock) WaitDiskAttached(instanceID string, volumeID string) error {
 	ret := _m.Called(instanceID, volumeID)

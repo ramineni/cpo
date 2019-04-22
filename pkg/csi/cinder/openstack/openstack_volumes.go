@@ -18,12 +18,17 @@ package openstack
 
 import (
 	"fmt"
+	"io/ioutil"
+	"path"
+	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/gophercloud/gophercloud/openstack/blockstorage/v3/volumes"
 	"github.com/gophercloud/gophercloud/openstack/compute/v2/extensions/volumeattach"
 	"k8s.io/apimachinery/pkg/util/wait"
 	cpoerrors "k8s.io/cloud-provider-openstack/pkg/util/errors"
+	metadataUtil "k8s.io/cloud-provider-openstack/pkg/util/metadata"
 
 	"k8s.io/klog"
 )
@@ -294,6 +299,111 @@ func (os *OpenStack) GetAttachmentDiskPath(instanceID, volumeID string) (string,
 		}
 	}
 	return "", fmt.Errorf("volume %s has no ServerId", volumeID)
+}
+
+// GetDevicePath returns the path of an attached block storage volume, specified by its id.
+func (os *OpenStack) GetDevicePath(volumeID string) (string, error) {
+	backoff := wait.Backoff{
+		Duration: operationFinishInitDelay,
+		Factor:   operationFinishFactor,
+		Steps:    operationFinishSteps,
+	}
+
+	var devicePath string
+	err := wait.ExponentialBackoff(backoff, func() (bool, error) {
+		devicePath = os.getDevicePathBySerialID(volumeID)
+		if devicePath != "" {
+			return true, nil
+		}
+		devicePath = os.getDevicePathFromInstanceMetadata(volumeID)
+		if devicePath != "" {
+			return true, nil
+		}
+		return false, nil
+	})
+
+	if err == wait.ErrWaitTimeout {
+		return "", fmt.Errorf("Failed to find device for the volumeID: %q within the alloted time", volumeID)
+	} else if devicePath == "" {
+		return "", fmt.Errorf("Device path was empty for volumeID: %q", volumeID)
+	}
+	return devicePath, nil
+}
+
+// GetDevicePathBySerialID returns the path of an attached block storage volume, specified by its id.
+func (os *OpenStack) getDevicePathBySerialID(volumeID string) string {
+	// Build a list of candidate device paths.
+	// Certain Nova drivers will set the disk serial ID, including the Cinder volume id.
+	candidateDeviceNodes := []string{
+		// KVM
+		fmt.Sprintf("virtio-%s", volumeID[:20]),
+		// KVM virtio-scsi
+		fmt.Sprintf("scsi-0QEMU_QEMU_HARDDISK_%s", volumeID[:20]),
+		// ESXi
+		fmt.Sprintf("wwn-0x%s", strings.Replace(volumeID, "-", "", -1)),
+	}
+
+	files, err := ioutil.ReadDir("/dev/disk/by-id/")
+	if err != nil {
+		klog.V(4).Infof("ReadDir failed with error %v", err)
+	}
+
+	for _, f := range files {
+		for _, c := range candidateDeviceNodes {
+			if c == f.Name() {
+				klog.V(4).Infof("Found disk attached as %q; full devicepath: %s\n",
+					f.Name(), path.Join("/dev/disk/by-id/", f.Name()))
+				return path.Join("/dev/disk/by-id/", f.Name())
+			}
+		}
+	}
+
+	klog.V(4).Infof("Failed to find device for the volumeID: %q by serial ID", volumeID)
+	return ""
+}
+
+func (os *OpenStack) getDevicePathFromInstanceMetadata(volumeID string) string {
+	// Nova Hyper-V hosts cannot override disk SCSI IDs. In order to locate
+	// volumes, we're querying the metadata service. Note that the Hyper-V
+	// driver will include device metadata for untagged volumes as well.
+	//
+	// We're avoiding using cached metadata (or the configdrive),
+	// relying on the metadata service.
+	instanceMetadata, err := metadataUtil.GetFromMetadataService("latest")
+
+	if err != nil {
+		klog.V(4).Infof("Could not retrieve instance metadata. Error: %v", err)
+		return ""
+	}
+
+	for _, device := range instanceMetadata.Devices {
+		if device.Type == "disk" && device.Serial == volumeID {
+			klog.V(4).Infof(
+				"Found disk metadata for volumeID %q. Bus: %q, Address: %q",
+				volumeID, device.Bus, device.Address)
+
+			diskPattern := fmt.Sprintf("/dev/disk/by-path/*-%s-%s", device.Bus, device.Address)
+			diskPaths, err := filepath.Glob(diskPattern)
+			if err != nil {
+				klog.Errorf(
+					"could not retrieve disk path for volumeID: %q. Error filepath.Glob(%q): %v",
+					volumeID, diskPattern, err)
+				return ""
+			}
+
+			if len(diskPaths) == 1 {
+				return diskPaths[0]
+			}
+
+			klog.Errorf(
+				"expecting to find one disk path for volumeID %q, found %d: %v",
+				volumeID, len(diskPaths), diskPaths)
+			return ""
+		}
+	}
+
+	klog.V(4).Infof("Could not retrieve device metadata for volumeID: %q", volumeID)
+	return ""
 }
 
 // diskIsAttached queries if a volume is attached to a compute instance

@@ -183,9 +183,9 @@ func (cs *controllerServer) ControllerPublishVolume(ctx context.Context, req *cs
 		return nil, err
 	}
 
-	devicePath, err := cloud.GetAttachmentDiskPath(instanceID, volumeID)
+	devicePath, err := cloud.GetDevicePath(volumeID)
 	if err != nil {
-		klog.V(3).Infof("Failed to GetAttachmentDiskPath: %v", err)
+		klog.V(3).Infof("Failed to GetDevicePath: %v", err)
 		return nil, err
 	}
 
