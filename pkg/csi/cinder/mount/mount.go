@@ -41,18 +41,22 @@ const (
 )
 
 type IMount interface {
+	mount.Interface
+	mount.Exec
 	GetBaseMounter() *mount.SafeFormatAndMount
 	ScanForAttach(devicePath string) error
 	GetDevicePath(volumeID string) (string, error)
 	IsLikelyNotMountPointAttach(targetpath string) (bool, error)
 	FormatAndMount(source string, target string, fstype string, options []string) error
 	IsLikelyNotMountPointDetach(targetpath string) (bool, error)
-	Mount(source string, target string, fstype string, options []string) error
+	//Mount(source string, target string, fstype string, options []string) error
 	UnmountPath(mountPath string) error
 	GetInstanceID() (string, error)
+	GetDiskFormat(disk string) (string, error)
 }
 
 type Mount struct {
+	mount.SafeFormatAndMount
 }
 
 var MInstance IMount = nil
@@ -67,7 +71,8 @@ func GetMountProvider() (IMount, error) {
 
 // GetBaseMounter returns instance of SafeFormatAndMount
 func (m *Mount) GetBaseMounter() *mount.SafeFormatAndMount {
-	nMounter := mount.New("")
+	//nMounter := mount.New("")
+	nMounter, _ := GetMountProvider()
 	nExec := mount.NewOsExec()
 	return &mount.SafeFormatAndMount{
 		Interface: nMounter,
@@ -97,6 +102,63 @@ func probeVolume() error {
 		return err
 	}
 	return nil
+}
+
+func (m *Mount) GetDiskFormat(disk string) (string, error) {
+	args := []string{"-p", "-s", "TYPE", "-s", "PTTYPE", "-o", "export", disk}
+	klog.V(4).Infof("Attempting to determine if disk %q is formatted using blkid with args: (%v)", disk, args)
+	dataOut, err := m.Exec.Run("blkid", args...)
+	output := strings.TrimSpace(string(dataOut))
+	klog.V(4).Infof("Output: %q, err: %v", output, err)
+
+	if err != nil {
+		if exit, ok := err.(utilexec.ExitError); ok {
+			if exit.ExitStatus() == 2 {
+				// Disk device is unformatted.
+				// For `blkid`, if the specified token (TYPE/PTTYPE, etc) was
+				// not found, or no (specified) devices could be identified, an
+				// exit code of 2 is returned.
+				return "", nil
+			}
+		}
+		klog.Errorf("Could not determine if disk %q is formatted (%v)", disk, err)
+		return "", err
+	}
+
+	var fstype, pttype string
+
+	lines := strings.Split(output, "\n")
+	if len(lines) == 1 {
+		// In case of Alpine, o/p will be one line. So, try to split by space
+		lines = strings.Split(output, " ")
+	}
+	for _, l := range lines {
+		if len(l) <= 0 {
+			// Ignore empty line.
+			continue
+		}
+		cs := strings.Split(l, "=")
+		if len(cs) != 2 {
+			// If it's not key=value pair, ignore
+			continue
+		}
+		// TYPE is filesystem type, and PTTYPE is partition table type, according
+		// to https://www.kernel.org/pub/linux/utils/util-linux/v2.21/libblkid-docs/.
+		if cs[0] == "TYPE" {
+			fstype = strings.ReplaceAll(cs[1], "\"", "")
+		} else if cs[0] == "PTTYPE" {
+			pttype = cs[1]
+		}
+	}
+
+	if len(pttype) > 0 {
+		klog.V(4).Infof("Disk %s detected partition table type: %s", disk, pttype)
+		// Returns a special non-empty string as filesystem type, then kubelet
+		// will not format it.
+		return "unknown data, probably partitions", nil
+	}
+
+	return fstype, nil
 }
 
 // GetDevicePath returns the path of an attached block storage volume, specified by its id.

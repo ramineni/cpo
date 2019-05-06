@@ -73,3 +73,10 @@ func (cloud *cloud) GetSnapshotByID(snapshotID string) (*snapshots.Snapshot, err
 func (cloud *cloud) WaitSnapshotReady(snapshotID string) error {
 	return nil
 }
+
+func (cloud *cloud) ExpandVolume(volumeID string, size int) error {
+	return nil
+}
+func (cloud *cloud) GetVolume(volumeID string) (*volumes.Volume, error) {
+	return nil, nil
+}

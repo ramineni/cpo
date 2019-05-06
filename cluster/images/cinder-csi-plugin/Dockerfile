@@ -3,7 +3,7 @@ LABEL maintainers="Kubernetes Authors"
 LABEL description="Cinder CSI Plugin"
 
 # Install e4fsprogs for format
-RUN apk add --no-cache ca-certificates e2fsprogs eudev xfsprogs
+RUN apk add --no-cache ca-certificates e2fsprogs eudev xfsprogs findmnt
 
 ADD cinder-csi-plugin /bin/
 
