@@ -50,11 +50,13 @@ type IOpenStack interface {
 	GetSnapshotByNameAndVolumeID(n string, volumeId string) ([]snapshots.Snapshot, error)
 	GetSnapshotByID(snapshotID string) (*snapshots.Snapshot, error)
 	WaitSnapshotReady(snapshotID string) error
+	GetMaxVolLimit() int64
 }
 
 type OpenStack struct {
 	compute      *gophercloud.ServiceClient
 	blockstorage *gophercloud.ServiceClient
+	bsOpts       BlockStorageOpts
 }
 
 type BlockStorageOpts struct {
@@ -236,6 +238,7 @@ func CreateOpenStackProvider() (IOpenStack, error) {
 	OsInstance = &OpenStack{
 		compute:      computeclient,
 		blockstorage: blockstorageclient,
+		bsOpts:       cfg.BlockStorage,
 	}
 
 	return OsInstance, nil
@@ -254,14 +257,4 @@ func GetOpenStackProvider() (IOpenStack, error) {
 	}
 
 	return OsInstance, nil
-}
-
-//GetMaxVolLimit returns max vol limit
-func GetMaxVolLimit() int64 {
-	if cfg.BlockStorage.NodeVolumeAttachLimit > 0 && cfg.BlockStorage.NodeVolumeAttachLimit <= 256 {
-		return cfg.BlockStorage.NodeVolumeAttachLimit
-	}
-
-	return maxVol
-
 }

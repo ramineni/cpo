@@ -250,6 +250,16 @@ func (os *OpenStack) GetAttachmentDiskPath(instanceID, volumeID string) (string,
 	return "", fmt.Errorf("volume %s has no ServerId", volumeID)
 }
 
+//GetMaxVolLimit returns max vol limit
+func (os *OpenStack) GetMaxVolLimit() int64 {
+	if os.bsOpts.NodeVolumeAttachLimit > 0 && os.bsOpts.NodeVolumeAttachLimit <= 256 {
+		return os.bsOpts.NodeVolumeAttachLimit
+	}
+
+	return maxVol
+
+}
+
 // diskIsAttached queries if a volume is attached to a compute instance
 func (os *OpenStack) diskIsAttached(instanceID, volumeID string) (bool, error) {
 	volume, err := os.GetVolume(volumeID)

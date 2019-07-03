@@ -367,7 +367,7 @@ func getNodeID(mount mount.IMount, metadata openstack.IMetadata) (string, error)
 	return nodeID, nil
 }
 
-func getMaxVolumeLimit() int64 {
-	return openstack.GetMaxVolLimit()
+func (ns *nodeServer) getMaxVolumeLimit() int64 {
+	return ns.Cloud.GetMaxVolLimit()
 
 }
