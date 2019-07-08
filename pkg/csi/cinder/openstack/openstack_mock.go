@@ -319,3 +319,17 @@ func (_m *OpenStackMock) WaitSnapshotReady(snapshotID string) error {
 func (_m *OpenStackMock) GetMaxVolLimit() int64 {
 	return 0
 }
+
+// ExpandVolume provides a mock function with given fields: instanceID, volumeID
+func (_m *OpenStackMock) ExpandVolume(volumeID string, size int) error {
+	ret := _m.Called(volumeID, size)
+
+	var r0 error
+	if rf, ok := ret.Get(0).(func(string, int) error); ok {
+		r0 = rf(volumeID, size)
+	} else {
+		r0 = ret.Error(0)
+	}
+
+	return r0
+}
