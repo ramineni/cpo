@@ -5,7 +5,7 @@ kind: Service
 apiVersion: v1
 metadata:
   name: csi-cinder-controller-service
-  namespace: kube-system
+  namespace: default
   labels:
     app: csi-cinder-controllerplugin
 spec:
@@ -20,7 +20,7 @@ kind: StatefulSet
 apiVersion: apps/v1
 metadata:
   name: csi-cinder-controllerplugin
-  namespace: kube-system
+  namespace: default
 spec:
   serviceName: "csi-cinder-controller-service"
   replicas: 1
@@ -81,7 +81,7 @@ spec:
             - name: socket-dir
               mountPath: /var/lib/csi/sockets/pluginproxy/
         - name: cinder-csi-plugin
-          image: docker.io/k8scloudprovider/cinder-csi-plugin:latest
+          image: docker.io/k8scloudprovider/cinder-csi-plugin:0dbc0b2f-dirty
           args :
             - /bin/cinder-csi-plugin
             - "--nodeid=$(NODE_ID)"
