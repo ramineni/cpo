@@ -59,7 +59,7 @@ endif
 depend-update: work
 	dep ensure -update -v
 
-build: openstack-cloud-controller-manager cinder-provisioner cinder-flex-volume-driver cinder-csi-plugin k8s-keystone-auth client-keystone-auth octavia-ingress-controller manila-provisioner manila-csi-plugin barbican-kms-plugin magnum-auto-healer
+build: openstack-cloud-controller-manager cinder-provisioner cinder-flex-volume-driver cinder-csi-plugin k8s-keystone-auth client-keystone-auth octavia-ingress-controller manila-provisioner manila-csi-plugin barbican-kms-plugin magnum-auto-healer csi-cinder-e2e
 
 openstack-cloud-controller-manager: depend $(SOURCES)
 	CGO_ENABLED=0 GOOS=$(GOOS) go build \
@@ -78,6 +78,12 @@ cinder-csi-plugin: depend $(SOURCES)
 		-ldflags $(LDFLAGS) \
 		-o cinder-csi-plugin \
 		cmd/cinder-csi-plugin/main.go
+
+csi-cinder-e2e: depend $(SOURCES)
+	CGO_ENABLED=0 GOOS=$(GOOS) go build \
+		-ldflags $(LDFLAGS) \
+		-o csi-cinder-e2e\
+		cmd/tests/csi-cinder-e2e.go
 
 cinder-flex-volume-driver: depend $(SOURCES)
 	CGO_ENABLED=0 GOOS=$(GOOS) go build \
