@@ -41,14 +41,14 @@ import (
 	"k8s.io/kubernetes/cmd/cloud-controller-manager/app"
 	cloudcontrollerconfig "k8s.io/kubernetes/cmd/cloud-controller-manager/app/config"
 	"k8s.io/kubernetes/cmd/cloud-controller-manager/app/options"
-	_ "k8s.io/kubernetes/pkg/client/metrics/prometheus" // for client metric registration
+	_ "k8s.io/component-base/metrics/prometheus/restclient" // for client metric registration
 	cloudcontrollers "k8s.io/kubernetes/pkg/controller/cloud"
 	routecontroller "k8s.io/kubernetes/pkg/controller/route"
 	servicecontroller "k8s.io/kubernetes/pkg/controller/service"
 	_ "k8s.io/kubernetes/pkg/features" // add the kubernetes feature gates
 	utilflag "k8s.io/kubernetes/pkg/util/flag"
-	_ "k8s.io/kubernetes/pkg/version/prometheus" // for version metric registration
-	"k8s.io/kubernetes/pkg/version/verflag"
+	 _ "k8s.io/component-base/metrics/prometheus/version" // for version metric registration
+	"k8s.io/component-base/version/verflag"
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
@@ -160,7 +160,7 @@ func newControllerInitializers() map[string]initFunc {
 
 func startCloudNodeController(ctx *cloudcontrollerconfig.CompletedConfig, cloud cloudprovider.Interface, stopCh <-chan struct{}) (http.Handler, bool, error) {
 	// Start the CloudNodeController
-	nodeController := cloudcontrollers.NewCloudNodeController(
+	nodeController, _  := cloudcontrollers.NewCloudNodeController(
 		ctx.SharedInformers.Core().V1().Nodes(),
 		// cloud node controller uses existing cluster role from node-controller
 		ctx.ClientBuilder.ClientOrDie("node-controller"),
