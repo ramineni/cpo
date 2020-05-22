@@ -24,6 +24,7 @@ import (
 	"github.com/gophercloud/gophercloud/openstack"
 	"github.com/gophercloud/gophercloud/openstack/blockstorage/v3/snapshots"
 	"github.com/gophercloud/gophercloud/openstack/blockstorage/v3/volumes"
+	"github.com/gophercloud/gophercloud/openstack/blockstorage/v3/volumetypes"
 	"github.com/gophercloud/gophercloud/openstack/compute/v2/servers"
 	"github.com/spf13/pflag"
 	gcfg "gopkg.in/gcfg.v1"
@@ -43,8 +44,9 @@ func AddExtraFlags(fs *pflag.FlagSet) {
 type IOpenStack interface {
 	CheckBlockStorageAPI() error
 	CreateVolume(name string, size int, vtype, availability string, snapshotID string, sourcevolID string, tags *map[string]string) (*volumes.Volume, error)
+	CreateVolumeType(name string, description string, extraSpecs map[string]string) (*volumetypes.VolumeType, error)
 	DeleteVolume(volumeID string) error
-	AttachVolume(instanceID, volumeID string) (string, error)
+	AttachVolume(instanceID, volumeID string, multiattach bool) (string, error)
 	ListVolumes(limit int, startingToken string) ([]volumes.Volume, string, error)
 	WaitDiskAttached(instanceID string, volumeID string) error
 	DetachVolume(instanceID, volumeID string) error

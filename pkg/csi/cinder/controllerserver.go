@@ -41,16 +41,18 @@ type controllerServer struct {
 }
 
 func (cs *controllerServer) CreateVolume(ctx context.Context, req *csi.CreateVolumeRequest) (*csi.CreateVolumeResponse, error) {
+	klog.V(4).Infof("CreateVolume: called with args %+v", *req)
 
 	// Volume Name
 	volName := req.GetName()
+	volCapabilities := req.GetVolumeCapabilities()
 
 	if len(volName) == 0 {
-		return nil, status.Error(codes.InvalidArgument, "CreateVolume request missing Volume Name")
+		return nil, status.Error(codes.InvalidArgument, "[CreateVolume] missing Volume Name")
 	}
 
-	if req.VolumeCapabilities == nil {
-		return nil, status.Error(codes.InvalidArgument, "CreateVolume request missing Volume capability")
+	if volCapabilities == nil {
+		return nil, status.Error(codes.InvalidArgument, "[CreateVolume] missing Volume capability")
 	}
 
 	// Volume Size - Default is 1 GiB
@@ -60,8 +62,13 @@ func (cs *controllerServer) CreateVolume(ctx context.Context, req *csi.CreateVol
 	}
 	volSizeGB := int(util.RoundUpSize(volSizeBytes, 1024*1024*1024))
 
-	// Volume Type
 	volType := req.GetParameters()["type"]
+
+	// If multi-attach volume requested, required volume type will be created.
+	if isMultiAttachVolumeRequest(volCapabilities) {
+		klog.V(4).Infof("Volume with 'multiattach' capability requested: %+v", &volCapabilities)
+		volType = "multiattach"
+	}
 
 	var volAvailability string
 	if req.GetAccessibilityRequirements() != nil {
@@ -88,10 +95,10 @@ func (cs *controllerServer) CreateVolume(ctx context.Context, req *csi.CreateVol
 
 		klog.V(4).Infof("Volume %s already exists in Availability Zone: %s of size %d GiB", volumes[0].ID, volumes[0].AvailabilityZone, volumes[0].Size)
 		return getCreateVolumeResponse(&volumes[0]), nil
+
 	} else if len(volumes) > 1 {
 		klog.V(3).Infof("found multiple existing volumes with selected name (%s) during create", volName)
 		return nil, status.Error(codes.Internal, "Multiple volumes reported by Cinder with same name")
-
 	}
 
 	// Volume Create
@@ -124,17 +131,29 @@ func (cs *controllerServer) CreateVolume(ctx context.Context, req *csi.CreateVol
 
 	vol, err := cloud.CreateVolume(volName, volSizeGB, volType, volAvailability, snapshotID, sourcevolID, &properties)
 	if err != nil {
-		klog.V(3).Infof("Failed to CreateVolume: %v", err)
+		klog.Errorf("Failed to CreateVolume: %v", err)
 		return nil, status.Error(codes.Internal, fmt.Sprintf("CreateVolume failed with error %v", err))
 
 	}
 
-	klog.V(4).Infof("Create volume %s in Availability Zone: %s of size %d GiB", vol.ID, vol.AvailabilityZone, vol.Size)
+	klog.V(4).Infof("CreateVolume: Successfully created volume %s in Availability Zone: %s of size %d GiB", vol.ID, vol.AvailabilityZone, vol.Size)
 
 	return getCreateVolumeResponse(vol), nil
 }
 
+func isMultiAttachVolumeRequest(caps []*csi.VolumeCapability) bool {
+	for _, c := range caps {
+		if c.AccessMode.Mode == csi.VolumeCapability_AccessMode_MULTI_NODE_READER_ONLY ||
+			c.AccessMode.Mode == csi.VolumeCapability_AccessMode_MULTI_NODE_SINGLE_WRITER ||
+			c.AccessMode.Mode == csi.VolumeCapability_AccessMode_MULTI_NODE_MULTI_WRITER {
+			return true
+		}
+	}
+	return false
+}
+
 func (cs *controllerServer) DeleteVolume(ctx context.Context, req *csi.DeleteVolumeRequest) (*csi.DeleteVolumeResponse, error) {
+	klog.V(4).Infof("DeleteVolume: called with args %+v", *req)
 
 	// Volume Delete
 	volID := req.GetVolumeId()
@@ -151,7 +170,7 @@ func (cs *controllerServer) DeleteVolume(ctx context.Context, req *csi.DeleteVol
 		return nil, status.Error(codes.Internal, fmt.Sprintf("DeleteVolume failed with error %v", err))
 	}
 
-	klog.V(4).Infof("Delete volume %s", volID)
+	klog.V(4).Infof("DeleteVolume: Successfully deleted volume %s", volID)
 
 	return &csi.DeleteVolumeResponse{}, nil
 }
@@ -173,7 +192,7 @@ func (cs *controllerServer) ControllerPublishVolume(ctx context.Context, req *cs
 		return nil, status.Error(codes.InvalidArgument, "[ControllerPublishVolume] Volume capability must be provided")
 	}
 
-	_, err := cs.Cloud.GetVolume(volumeID)
+	vol, err := cs.Cloud.GetVolume(volumeID)
 	if err != nil {
 		if cpoerrors.IsNotFound(err) {
 			return nil, status.Errorf(codes.NotFound, "[ControllerPublishVolume] Volume %s not found", volumeID)
@@ -189,7 +208,7 @@ func (cs *controllerServer) ControllerPublishVolume(ctx context.Context, req *cs
 		return nil, status.Error(codes.Internal, fmt.Sprintf("[ControllerPublishVolume] GetInstanceByID failed with error %v", err))
 	}
 
-	_, err = cs.Cloud.AttachVolume(instanceID, volumeID)
+	_, err = cs.Cloud.AttachVolume(instanceID, volumeID, vol.Multiattach)
 	if err != nil {
 		klog.V(3).Infof("Failed to AttachVolume: %v", err)
 		return nil, status.Error(codes.Internal, fmt.Sprintf("[ControllerPublishVolume] Attach Volume failed with error %v", err))
@@ -202,6 +221,7 @@ func (cs *controllerServer) ControllerPublishVolume(ctx context.Context, req *cs
 		return nil, status.Error(codes.Internal, fmt.Sprintf("[ControllerPublishVolume] failed to attach volume: %v", err))
 	}
 
+	//TODO(ramineni): update this to get multiple device paths
 	devicePath, err := cs.Cloud.GetAttachmentDiskPath(instanceID, volumeID)
 	if err != nil {
 		klog.V(3).Infof("Failed to GetAttachmentDiskPath: %v", err)

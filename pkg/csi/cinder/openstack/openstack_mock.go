@@ -19,6 +19,7 @@ package openstack
 import (
 	"github.com/gophercloud/gophercloud/openstack/blockstorage/v3/snapshots"
 	"github.com/gophercloud/gophercloud/openstack/blockstorage/v3/volumes"
+	"github.com/gophercloud/gophercloud/openstack/blockstorage/v3/volumetypes"
 	"github.com/gophercloud/gophercloud/openstack/compute/v2/servers"
 	"github.com/stretchr/testify/mock"
 	cpo "k8s.io/cloud-provider-openstack/pkg/cloudprovider/providers/openstack"
@@ -95,6 +96,10 @@ func (_m *OpenStackMock) CreateVolume(name string, size int, vtype string, avail
 	}
 
 	return r0, r1
+}
+
+func (_m *OpenStackMock) CreateVolumeType(name string, desc string, extraSpecs map[string]string) (*volumetypes.VolumeType, error) {
+	return nil, nil
 }
 
 // DeleteVolume provides a mock function with given fields: volumeID

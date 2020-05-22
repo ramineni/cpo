@@ -25,6 +25,7 @@ import (
 	"github.com/gophercloud/gophercloud/openstack/blockstorage/apiversions"
 	volumeexpand "github.com/gophercloud/gophercloud/openstack/blockstorage/extensions/volumeactions"
 	"github.com/gophercloud/gophercloud/openstack/blockstorage/v3/volumes"
+	"github.com/gophercloud/gophercloud/openstack/blockstorage/v3/volumetypes"
 	"github.com/gophercloud/gophercloud/openstack/compute/v2/extensions/volumeattach"
 	"k8s.io/apimachinery/pkg/util/wait"
 	cpoerrors "k8s.io/cloud-provider-openstack/pkg/util/errors"
@@ -59,14 +60,26 @@ func (os *OpenStack) CheckBlockStorageAPI() error {
 
 // CreateVolume creates a volume of given size
 func (os *OpenStack) CreateVolume(name string, size int, vtype, availability string, snapshotID string, sourcevolID string, tags *map[string]string) (*volumes.Volume, error) {
+
+	// create multiattach volumetype if requested
+	if vtype == "multiattach" {
+		extraSpecs := map[string]string{"multiattach": "<is> True"}
+		vt, err := os.CreateVolumeType(vtype, "", extraSpecs)
+		if err != nil {
+			klog.V(3).Infof("Unable to create volume type %s for the volume", vtype)
+			return nil, err
+		}
+		vtype = vt.ID
+	}
+
 	opts := &volumes.CreateOpts{
 		Name:             name,
 		Size:             size,
-		VolumeType:       vtype,
 		AvailabilityZone: availability,
 		Description:      volumeDescription,
 		SnapshotID:       snapshotID,
 		SourceVolID:      sourcevolID,
+		VolumeType:       vtype,
 	}
 	if tags != nil {
 		opts.Metadata = *tags
@@ -78,6 +91,40 @@ func (os *OpenStack) CreateVolume(name string, size int, vtype, availability str
 	}
 
 	return vol, nil
+}
+
+// CreateVolumeType creates a VolumeType with given parameters
+func (os *OpenStack) CreateVolumeType(name string, description string, extraSpecs map[string]string) (*volumetypes.VolumeType, error) {
+	var volType *volumetypes.VolumeType
+	var err error
+	allPages, err := volumetypes.List(os.blockstorage, volumetypes.ListOpts{}).AllPages()
+	if err != nil {
+		klog.V(4).Infof("Unable to list volume types", err)
+		return nil, err
+	}
+
+	volTypes, err := volumetypes.ExtractVolumeTypes(allPages)
+	if err != nil {
+		klog.V(4).Infof("Unable to list volume types", err)
+		return nil, err
+	}
+	for _, vt := range volTypes {
+		if vt.Name == name {
+			return &vt, nil
+		}
+	}
+
+	opts := &volumetypes.CreateOpts{
+		Name:        name,
+		Description: description,
+		ExtraSpecs:  extraSpecs,
+	}
+	volType, err = volumetypes.Create(os.blockstorage, opts).Extract()
+	if err != nil {
+		return nil, err
+	}
+
+	return volType, nil
 }
 
 // ListVolumes list all the volumes
@@ -144,21 +191,26 @@ func (os *OpenStack) GetVolume(volumeID string) (*volumes.Volume, error) {
 }
 
 // AttachVolume attaches given cinder volume to the compute
-func (os *OpenStack) AttachVolume(instanceID, volumeID string) (string, error) {
+func (os *OpenStack) AttachVolume(instanceID, volumeID string, multiattach bool) (string, error) {
+	computeServiceClient := os.compute
+
 	volume, err := os.GetVolume(volumeID)
 	if err != nil {
 		return "", err
 	}
 
-	if len(volume.Attachments) > 0 {
-		if instanceID == volume.Attachments[0].ServerID {
-			klog.V(4).Infof("Disk %s is already attached to instance %s", volumeID, instanceID)
-			return volume.ID, nil
+	if multiattach {
+		// For multiattach volumes, supported compute api version is 2.60
+		// Init a local thread safe copy of the compute ServiceClient
+		computeServiceClient, err = openstack.NewComputeV2(os.compute.ProviderClient, os.epOpts)
+		if err != nil {
+			return "", err
 		}
-		return "", fmt.Errorf("disk %s is attached to a different instance (%s)", volumeID, volume.Attachments[0].ServerID)
-	}
 
-	_, err = volumeattach.Create(os.compute, instanceID, &volumeattach.CreateOpts{
+		computeServiceClient.Microversion = "2.60"
+
+	}
+	_, err = volumeattach.Create(computeServiceClient, instanceID, &volumeattach.CreateOpts{
 		VolumeID: volume.ID,
 	}).Extract()
 
@@ -205,14 +257,16 @@ func (os *OpenStack) DetachVolume(instanceID, volumeID string) error {
 		return nil
 	}
 
-	if volume.Status != VolumeInUseStatus {
-		return fmt.Errorf("can not detach volume %s, its status is %s", volume.Name, volume.Status)
-	}
+	// if volume.Status != VolumeInUseStatus {
+	// 	return fmt.Errorf("can not detach volume %s, its status is %s", volume.Name, volume.Status)
+	// }
+
+	// Incase volume is of type multiattach, it could be attached to more than one instance
 
 	if len(volume.Attachments) > 0 {
-		if volume.Attachments[0].ServerID != instanceID {
+		/* if volume.Attachments[0].ServerID != instanceID {
 			return fmt.Errorf("disk: %s is not attached to compute: %s", volume.Name, instanceID)
-		}
+		} */
 		err = volumeattach.Delete(os.compute, instanceID, volume.ID).ExtractErr()
 		if err != nil {
 			return fmt.Errorf("failed to delete volume %s from compute %s attached %v", volume.ID, instanceID, err)
