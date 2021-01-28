@@ -165,10 +165,13 @@ func (cs *controllerServer) DeleteVolume(ctx context.Context, req *csi.DeleteVol
 }
 
 func (cs *controllerServer) ControllerPublishVolume(ctx context.Context, req *csi.ControllerPublishVolumeRequest) (*csi.ControllerPublishVolumeResponse, error) {
+	klog.V(4).Infof("ControllerPublishVolume: called with args %+v", *req)
 
 	// Volume Attach
 	instanceID := req.GetNodeId()
 	volumeID := req.GetVolumeId()
+	readOnly := req.GetReadonly()
+
 	volumeCapability := req.GetVolumeCapability()
 
 	if len(volumeID) == 0 {
@@ -197,7 +200,7 @@ func (cs *controllerServer) ControllerPublishVolume(ctx context.Context, req *cs
 		return nil, status.Error(codes.Internal, fmt.Sprintf("[ControllerPublishVolume] GetInstanceByID failed with error %v", err))
 	}
 
-	_, err = cs.Cloud.AttachVolume(instanceID, volumeID)
+	_, err = cs.Cloud.AttachVolume(instanceID, volumeID, readOnly)
 	if err != nil {
 		klog.V(3).Infof("Failed to AttachVolume: %v", err)
 		return nil, status.Error(codes.Internal, fmt.Sprintf("[ControllerPublishVolume] Attach Volume failed with error %v", err))
@@ -208,6 +211,13 @@ func (cs *controllerServer) ControllerPublishVolume(ctx context.Context, req *cs
 	if err != nil {
 		klog.V(3).Infof("Failed to WaitDiskAttached: %v", err)
 		return nil, status.Error(codes.Internal, fmt.Sprintf("[ControllerPublishVolume] failed to attach volume: %v", err))
+	}
+
+	if readOnly {
+		err = cs.Cloud.UpdateAttachment(instanceID, volumeID)
+		if err != nil {
+			return nil, status.Errorf(codes.Internal, "[ControllerPublishVolume] failed to update Attachment mode: %v", err)
+		}
 	}
 
 	devicePath, err := cs.Cloud.GetAttachmentDiskPath(instanceID, volumeID)

@@ -24,6 +24,7 @@ import (
 	"github.com/gophercloud/gophercloud/openstack"
 	"github.com/gophercloud/gophercloud/openstack/blockstorage/apiversions"
 	volumeexpand "github.com/gophercloud/gophercloud/openstack/blockstorage/extensions/volumeactions"
+	"github.com/gophercloud/gophercloud/openstack/blockstorage/v3/attachments"
 	"github.com/gophercloud/gophercloud/openstack/blockstorage/v3/volumes"
 	"github.com/gophercloud/gophercloud/openstack/compute/v2/extensions/volumeattach"
 	"github.com/gophercloud/gophercloud/pagination"
@@ -161,7 +162,7 @@ func (os *OpenStack) GetVolume(volumeID string) (*volumes.Volume, error) {
 }
 
 // AttachVolume attaches given cinder volume to the compute
-func (os *OpenStack) AttachVolume(instanceID, volumeID string) (string, error) {
+func (os *OpenStack) AttachVolume(instanceID, volumeID string, readOnly bool) (string, error) {
 	computeServiceClient := os.compute
 
 	volume, err := os.GetVolume(volumeID)
@@ -186,7 +187,7 @@ func (os *OpenStack) AttachVolume(instanceID, volumeID string) (string, error) {
 		computeServiceClient.Microversion = "2.60"
 	}
 
-	_, err = volumeattach.Create(computeServiceClient, instanceID, &volumeattach.CreateOpts{
+	vAttachRes, err := volumeattach.Create(computeServiceClient, instanceID, &volumeattach.CreateOpts{
 		VolumeID: volume.ID,
 	}).Extract()
 
@@ -273,6 +274,29 @@ func (os *OpenStack) WaitDiskDetached(instanceID string, volumeID string) error 
 	}
 
 	return err
+}
+
+// UpdateAttachment gets device path of attached volume to the compute
+func (os *OpenStack) UpdateAttachment(instanceID, volumeID string) error {
+	volume, err := os.GetVolume(volumeID)
+	if err != nil {
+		return err
+	}
+	if len(volume.Attachments) > 0 {
+		for _, att := range volume.Attachments {
+			if att.ServerID == instanceID {
+				opts := &attachments.UpdateOpts{
+					Connector: map[string]interface{}{"mode": "ro"},
+				}
+				_, err = attachments.Update(os.blockstorage, att.AttachmentID, opts).Extract()
+				if err != nil {
+					return fmt.Errorf("failed to update attachment %s mode to readOnly: %v", att.AttachmentID, err)
+				}
+			}
+		}
+		return fmt.Errorf("disk %q is not attached to compute: %q", volumeID, instanceID)
+	}
+	return fmt.Errorf("volume %s has no Attachments", volumeID)
 }
 
 // GetAttachmentDiskPath gets device path of attached volume to the compute
